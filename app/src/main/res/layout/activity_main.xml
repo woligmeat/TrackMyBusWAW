@@ -1,33 +1,67 @@
 <?xml version="1.0" encoding="utf-8"?>
-<androidx.coordinatorlayout.widget.CoordinatorLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
-    android:layout_width="match_parent"
-    android:layout_height="match_parent"
+    android:layout_width="fill_parent"
+    android:layout_height="fill_parent"
     android:fitsSystemWindows="true"
+    android:orientation="vertical"
     tools:context=".MainActivity">
 
-    <com.google.android.material.appbar.AppBarLayout
+
+    <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:fitsSystemWindows="true">
+        android:layout_height="fill_parent"
+        android:layout_weight="1"
+        android:orientation="vertical">
 
-        <com.google.android.material.appbar.MaterialToolbar
-            android:id="@+id/toolbar"
-            android:layout_width="match_parent"
-            android:layout_height="?attr/actionBarSize" />
+       <fragment
+           android:layout_width="match_parent"
+           android:layout_height="match_parent"
+           android:name="com.google.android.gms.maps.SupportMapFragment"
+           android:id="@+id/id_map"
+           />
 
-    </com.google.android.material.appbar.AppBarLayout>
+    </LinearLayout>
 
-    <include layout="@layout/content_main" />
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="50dp"
+        android:background="#ADB5BD"
+        android:orientation="horizontal">
 
-    <com.google.android.material.floatingactionbutton.FloatingActionButton
-        android:id="@+id/fab"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_gravity="bottom|end"
-        android:layout_marginEnd="@dimen/fab_margin"
-        android:layout_marginBottom="16dp"
-        app:srcCompat="@android:drawable/ic_dialog_email" />
+        <ImageButton
+            android:id="@+id/imageButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:backgroundTint="#ADB5BD"
+            app:srcCompat="@drawable/search_3" />
 
-</androidx.coordinatorlayout.widget.CoordinatorLayout>
+        <ImageButton
+            android:id="@+id/imageButton2"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:backgroundTint="#ADB5BD"
+            app:srcCompat="@drawable/map_1" />
+
+        <ImageButton
+            android:id="@+id/imageButton3"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:backgroundTint="#ADB5BD"
+            app:srcCompat="@drawable/current_location_1" />
+
+        <ImageButton
+            android:id="@+id/imageButton4"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:backgroundTint="#ADB5BD"
+            app:srcCompat="@drawable/menu_2_1" />
+
+    </LinearLayout>
+
+</LinearLayout>
