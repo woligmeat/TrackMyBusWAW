@@ -13,10 +13,15 @@ import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 
+import com.google.android.gms.location.FusedLocationProviderClient;
+import com.google.android.gms.location.LocationServices;
 import com.google.android.gms.maps.*;
 import com.google.android.gms.maps.model.*;
 
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 import pl.creativesstudio.api.WarsawApiService;
 import pl.creativesstudio.models.ApiResponse;
@@ -31,36 +36,45 @@ public class MainActivity extends AppCompatActivity
         implements OnMapReadyCallback,
         GoogleMap.OnMyLocationButtonClickListener,
         GoogleMap.OnMyLocationClickListener,
+        GoogleMap.OnCameraIdleListener,
         ActivityCompat.OnRequestPermissionsResultCallback {
 
     private GoogleMap mMap;
     private static final int LOCATION_PERMISSION_REQUEST_CODE = 1;
+    private LatLng currentMapCenter;
+    private LatLngBounds visibleBounds;
 
-    // Initialize WarsawApiService
+
     private WarsawApiService apiService;
-
-    // Stałe dla API
     private static final String BASE_URL = "https://api.um.warszawa.pl/";
     private static final String API_KEY = "3fb6fadd-9c21-43fc-998b-c41cc14663ff";
-    private static final String RESOURCE_ID = "f2e5503e-927d-4ad3-9500-4ab9e55deb59"; // Upewnij się, że to jest poprawny resource_id
+    private static final String RESOURCE_ID = "f2e5503e-927d-4ad3-9500-4ab9e55deb59";
 
-    // Handler do aktualizacji danych co 10 sekund
     private Handler handler = new Handler();
     private Runnable runnable;
+    private Runnable mapUpdateRunnable;
+    private static final long MAP_UPDATE_DELAY = 1000; // 1 sekunda opóźnienia
+    private static final long DATA_REFRESH_INTERVAL = 10000; // 10 sekund na odświeżenie
+
+
+    private Map<String, Marker> activeMarkers = new HashMap<>();
+    private String selectedBusId = null;
+    private List<Bus> lastLoadedBuses = new ArrayList<>();
+    private long lastApiCallTime = 0;
+    private static final long MIN_API_CALL_INTERVAL = 5000; // Minimalny odstęp między zapytaniami (5 sekund)
+    private boolean isInitialLoad = true;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
-        // Initialize the map
         SupportMapFragment mapFragment = (SupportMapFragment) getSupportFragmentManager()
                 .findFragmentById(R.id.id_map);
         if (mapFragment != null) {
             mapFragment.getMapAsync(this);
         }
 
-        // Configure Retrofit
         Retrofit retrofit = new Retrofit.Builder()
                 .baseUrl(BASE_URL)
                 .addConverterFactory(GsonConverterFactory.create())
@@ -73,63 +87,150 @@ public class MainActivity extends AppCompatActivity
     public void onMapReady(@NonNull GoogleMap googleMap) {
         mMap = googleMap;
 
-        // Set initial location and marker
-        LatLng initialLocation = new LatLng(52.2881717, 21.0061544);
-        mMap.addMarker(new MarkerOptions().position(initialLocation).title("WSB Merito"));
-        mMap.moveCamera(CameraUpdateFactory.newLatLngZoom(initialLocation, 12));
+//        LatLng initialLocation = new LatLng(52.2881717, 21.0061544);
+//        currentMapCenter = initialLocation;
+//        mMap.addMarker(new MarkerOptions().position(initialLocation).title("WSB Merito"));
+//        mMap.moveCamera(CameraUpdateFactory.newLatLngZoom(initialLocation, 16));
+//
+//        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
+//                == PackageManager.PERMISSION_GRANTED) {
+//            mMap.setMyLocationEnabled(true);
+//        } else {
+//            ActivityCompat.requestPermissions(this,
+//                    new String[]{Manifest.permission.ACCESS_FINE_LOCATION},
+//                    LOCATION_PERMISSION_REQUEST_CODE);
+//        }
 
-        // Check location permissions
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
                 == PackageManager.PERMISSION_GRANTED) {
             mMap.setMyLocationEnabled(true);
+
+            FusedLocationProviderClient fusedLocationClient = LocationServices.getFusedLocationProviderClient(this);
+            fusedLocationClient.getLastLocation()
+                    .addOnSuccessListener(this, location -> {
+                        if (location != null) {
+                            LatLng currentLocation = new LatLng(location.getLatitude(), location.getLongitude());
+                            currentMapCenter = currentLocation;
+                            mMap.moveCamera(CameraUpdateFactory.newLatLngZoom(currentLocation, 15));
+                        } else {
+                            LatLng defaultLocation = new LatLng(52.2881717, 21.0061544);
+                            currentMapCenter = defaultLocation;
+                            mMap.moveCamera(CameraUpdateFactory.newLatLngZoom(defaultLocation, 15));
+                        }
+                    });
         } else {
-            // Request permissions
             ActivityCompat.requestPermissions(this,
                     new String[]{Manifest.permission.ACCESS_FINE_LOCATION},
                     LOCATION_PERMISSION_REQUEST_CODE);
+
+            LatLng defaultLocation = new LatLng(52.2881717, 21.0061544);
+            currentMapCenter = defaultLocation;
+            mMap.moveCamera(CameraUpdateFactory.newLatLngZoom(defaultLocation, 15));
         }
 
-        // Map UI settings
+
         mMap.getUiSettings().setAllGesturesEnabled(true);
         mMap.getUiSettings().setZoomControlsEnabled(true);
         mMap.getUiSettings().setCompassEnabled(true);
         mMap.getUiSettings().setMyLocationButtonEnabled(true);
 
-        // Location listener
+        mMap.setOnCameraIdleListener(this);
         mMap.setOnMyLocationButtonClickListener(this);
         mMap.setOnMyLocationClickListener(this);
 
-        // Load bus data initially
-        loadBusData();
+        mMap.setOnMarkerClickListener(marker -> {
+            if (marker.getSnippet() != null) {
+                selectedBusId = marker.getSnippet();
+            }
+            return false;
+        });
 
-        // Ustawienie aktualizacji co 10 sekund
+        updateVisibleBounds();
+        loadBusData(true);
+
         runnable = new Runnable() {
             @Override
             public void run() {
-                loadBusData();
-                handler.postDelayed(this, 10000); // 10 sekund
+                loadBusData(true);
+                handler.postDelayed(this, DATA_REFRESH_INTERVAL);
             }
         };
-        handler.postDelayed(runnable, 10000); // Pierwsze wywołanie po 10 sekundach
+        handler.postDelayed(runnable, DATA_REFRESH_INTERVAL);
     }
 
-    // Method to fetch data from API
-    private void loadBusData() {
-        // Wywołanie API z resource_id, apiKey i type=1 (autobusy)
+    private void updateVisibleBounds() {
+        if (mMap != null) {
+            visibleBounds = mMap.getProjection().getVisibleRegion().latLngBounds;
+        }
+    }
+
+    @Override
+    public void onCameraIdle() {
+        currentMapCenter = mMap.getCameraPosition().target;
+        updateVisibleBounds();
+
+        if (mapUpdateRunnable != null) {
+            handler.removeCallbacks(mapUpdateRunnable);
+        }
+
+        mapUpdateRunnable = new Runnable() {
+            @Override
+            public void run() {
+                updateMapWithCurrentData();
+            }
+        };
+        handler.postDelayed(mapUpdateRunnable, MAP_UPDATE_DELAY);
+    }
+
+    private void updateMapWithCurrentData() {
+        if (!lastLoadedBuses.isEmpty()) {
+            List<Bus> visibleBuses = filterBusesWithinBounds(lastLoadedBuses);
+            displayBusesOnMap(visibleBuses);
+        }
+
+        long currentTime = System.currentTimeMillis();
+        if (currentTime - lastApiCallTime >= MIN_API_CALL_INTERVAL || isInitialLoad) {
+            loadBusData(false);
+            isInitialLoad = false;
+        }
+    }
+
+    private List<Bus> filterBusesWithinBounds(List<Bus> allBuses) {
+        List<Bus> visibleBuses = new ArrayList<>();
+        if (visibleBounds != null) {
+            for (Bus bus : allBuses) {
+                LatLng busLocation = new LatLng(bus.getLat(), bus.getLon());
+                if (visibleBounds.contains(busLocation)) {
+                    visibleBuses.add(bus);
+                }
+            }
+        }
+        return visibleBuses;
+    }
+
+    private void loadBusData(boolean forced) {
+        long currentTime = System.currentTimeMillis();
+        if (!forced && currentTime - lastApiCallTime < MIN_API_CALL_INTERVAL) {
+            return;
+        }
+
         Call<ApiResponse> call = apiService.getBuses(
                 RESOURCE_ID,
                 API_KEY,
                 1,
-                null,    // Możesz podać konkretny numer linii, np. "219"
-                null     // Możesz podać konkretny numer brygady, np. "1"
+                null,
+                null
         );
+
+        lastApiCallTime = currentTime;
 
         call.enqueue(new Callback<ApiResponse>() {
             @Override
             public void onResponse(@NonNull Call<ApiResponse> call, @NonNull Response<ApiResponse> response) {
                 if (response.isSuccessful() && response.body() != null) {
-                    List<Bus> buses = response.body().getResult();
-                    displayBusesOnMap(buses);
+                    lastLoadedBuses = response.body().getResult();
+                    List<Bus> visibleBuses = filterBusesWithinBounds(lastLoadedBuses);
+                    displayBusesOnMap(visibleBuses);
                 } else {
                     Toast.makeText(MainActivity.this, "Błąd podczas pobierania danych", Toast.LENGTH_SHORT).show();
                 }
@@ -142,37 +243,54 @@ public class MainActivity extends AppCompatActivity
         });
     }
 
-    // Method to display buses on the map
     private void displayBusesOnMap(List<Bus> buses) {
-        // Clear existing markers except dla "WSB Merito"
         mMap.clear();
+
         LatLng initialLocation = new LatLng(52.2881717, 21.0061544);
         mMap.addMarker(new MarkerOptions().position(initialLocation).title("WSB Merito"));
 
+        if (visibleBounds != null) {
+            PolygonOptions polygonOptions = new PolygonOptions()
+                    .add(new LatLng(visibleBounds.southwest.latitude, visibleBounds.southwest.longitude))
+                    .add(new LatLng(visibleBounds.southwest.latitude, visibleBounds.northeast.longitude))
+                    .add(new LatLng(visibleBounds.northeast.latitude, visibleBounds.northeast.longitude))
+                    .add(new LatLng(visibleBounds.northeast.latitude, visibleBounds.southwest.longitude))
+                    .add(new LatLng(visibleBounds.southwest.latitude, visibleBounds.southwest.longitude))
+                    .strokeColor(Color.TRANSPARENT)
+                    .strokeWidth(0)
+                    .fillColor(Color.argb(0, 0, 0, 255));
+            mMap.addPolygon(polygonOptions);
+        }
+
+        activeMarkers.clear();
         for (Bus bus : buses) {
             double lat = bus.getLat();
             double lon = bus.getLon();
             String line = bus.getLines();
+            String busId = bus.getVehicleNumber();
 
             if (lat != 0 && lon != 0) {
                 LatLng position = new LatLng(lat, lon);
-
-                // Create a custom marker with the bus line number
                 BitmapDescriptor customIcon = BitmapDescriptorFactory.fromBitmap(createCustomMarker(line));
 
                 MarkerOptions markerOptions = new MarkerOptions()
                         .position(position)
                         .icon(customIcon)
-                        .title("Linia: " + line + " | Nr pojazdu: " + bus.getVehicleNumber());
+                        .title("Linia: " + line + " | Nr pojazdu: " + busId)
+                        .snippet(busId);
 
-                mMap.addMarker(markerOptions);
+                Marker marker = mMap.addMarker(markerOptions);
+                if (marker != null) {
+                    activeMarkers.put(busId, marker);
+                    if (busId.equals(selectedBusId)) {
+                        marker.showInfoWindow();
+                    }
+                }
             }
         }
     }
 
-    // Method to create custom marker bitmap
     private Bitmap createCustomMarker(String lineNumber) {
-        // Adjust text size based on map zoom level if needed
         int textSize = 50;
 
         Paint textPaint = new Paint();
@@ -191,7 +309,6 @@ public class MainActivity extends AppCompatActivity
         Canvas canvas = new Canvas(bitmap);
         canvas.drawRect(0, 0, width, height, backgroundPaint);
 
-        // Center the text
         Rect bounds = new Rect();
         textPaint.getTextBounds(lineNumber, 0, lineNumber.length(), bounds);
         int x = width / 2;
@@ -233,6 +350,11 @@ public class MainActivity extends AppCompatActivity
     @Override
     protected void onDestroy() {
         super.onDestroy();
-        handler.removeCallbacks(runnable);
+        if (handler != null) {
+            handler.removeCallbacks(runnable);
+            if (mapUpdateRunnable != null) {
+                handler.removeCallbacks(mapUpdateRunnable);
+            }
+        }
     }
 }
