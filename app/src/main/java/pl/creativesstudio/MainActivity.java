@@ -217,11 +217,21 @@ public class MainActivity extends AppCompatActivity
                 if (response.isSuccessful() && response.body() != null) {
                     List<Bus> result = response.body().getResult();
 
-                    // Sprawdź, czy JSON jest pusty
                     if (result == null || result.isEmpty()) {
-                        runOnUiThread(() -> Toast.makeText(MainActivity.this, "Brak danych do wyświetlenia. Spróbuj ponownie później.", Toast.LENGTH_LONG).show());
+                        // Brak danych: Wyświetl ostatnio pobrane dane
+                        runOnUiThread(() -> {
+                            if (!lastLoadedBuses.isEmpty()) {
+                                Toast.makeText(MainActivity.this, "Brak nowych danych. Wyświetlam ostatnio pobrane dane z czasu: " 
+                                    + formatTimestamp(lastApiCallTime), Toast.LENGTH_LONG).show();
+                                displayBusesOnMap(lastLoadedBuses);
+                            } else {
+                                Toast.makeText(MainActivity.this, "Brak danych do wyświetlenia.", Toast.LENGTH_LONG).show();
+                            }
+                        });
                     } else {
+                        // Nowe dane zostały poprawnie pobrane
                         lastLoadedBuses = result;
+                        lastApiCallTime = currentTime;
 
                         runOnUiThread(() -> {
                             List<Bus> visibleBuses = filterBusesWithinBounds(lastLoadedBuses);
@@ -229,14 +239,36 @@ public class MainActivity extends AppCompatActivity
                         });
                     }
                 } else {
-                    runOnUiThread(() -> Toast.makeText(MainActivity.this, "Błąd podczas pobierania danych. Kod odpowiedzi: " + response.code(), Toast.LENGTH_SHORT).show());
+                    // Błąd w odpowiedzi API: Wyświetl ostatnio pobrane dane
+                    runOnUiThread(() -> {
+                        if (!lastLoadedBuses.isEmpty()) {
+                            Toast.makeText(MainActivity.this, "Błąd API. Wyświetlam ostatnio pobrane dane z czasu: " 
+                                + formatTimestamp(lastApiCallTime), Toast.LENGTH_LONG).show();
+                            displayBusesOnMap(lastLoadedBuses);
+                        } else {
+                            Toast.makeText(MainActivity.this, "Błąd API i brak danych do wyświetlenia.", Toast.LENGTH_LONG).show();
+                        }
+                    });
                 }
             } catch (Exception e) {
-                runOnUiThread(() -> Toast.makeText(MainActivity.this, "Błąd sieci: " + e.getMessage(), Toast.LENGTH_SHORT).show());
+                // Błąd sieci: Wyświetl ostatnio pobrane dane
+                runOnUiThread(() -> {
+                    if (!lastLoadedBuses.isEmpty()) {
+                        Toast.makeText(MainActivity.this, "Błąd połączenia. Wyświetlam ostatnio pobrane dane z czasu: " 
+                            + formatTimestamp(lastApiCallTime), Toast.LENGTH_LONG).show();
+                        displayBusesOnMap(lastLoadedBuses);
+                    } else {
+                        Toast.makeText(MainActivity.this, "Błąd połączenia i brak danych do wyświetlenia.", Toast.LENGTH_LONG).show();
+                    }
+                });
             }
         });
+    }
 
-        lastApiCallTime = currentTime;
+    private String formatTimestamp(long timestamp) {
+        java.text.SimpleDateFormat sdf = new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+        java.util.Date date = new java.util.Date(timestamp);
+        return sdf.format(date);
     }
 
         private void displayBusesOnMap(List<Bus> buses) {
