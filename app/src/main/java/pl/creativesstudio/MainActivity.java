@@ -215,14 +215,21 @@ public class MainActivity extends AppCompatActivity
                 Response<ApiResponse> response = call.execute();
 
                 if (response.isSuccessful() && response.body() != null) {
-                    lastLoadedBuses = response.body().getResult();
+                    List<Bus> result = response.body().getResult();
 
-                    runOnUiThread(() -> {
-                        List<Bus> visibleBuses = filterBusesWithinBounds(lastLoadedBuses);
-                        displayBusesOnMap(visibleBuses);
-                    });
+                    // Sprawdź, czy JSON jest pusty
+                    if (result == null || result.isEmpty()) {
+                        runOnUiThread(() -> Toast.makeText(MainActivity.this, "Brak danych do wyświetlenia. Spróbuj ponownie później.", Toast.LENGTH_LONG).show());
+                    } else {
+                        lastLoadedBuses = result;
+
+                        runOnUiThread(() -> {
+                            List<Bus> visibleBuses = filterBusesWithinBounds(lastLoadedBuses);
+                            displayBusesOnMap(visibleBuses);
+                        });
+                    }
                 } else {
-                    runOnUiThread(() -> Toast.makeText(MainActivity.this, "Błąd podczas pobierania danych", Toast.LENGTH_SHORT).show());
+                    runOnUiThread(() -> Toast.makeText(MainActivity.this, "Błąd podczas pobierania danych. Kod odpowiedzi: " + response.code(), Toast.LENGTH_SHORT).show());
                 }
             } catch (Exception e) {
                 runOnUiThread(() -> Toast.makeText(MainActivity.this, "Błąd sieci: " + e.getMessage(), Toast.LENGTH_SHORT).show());
