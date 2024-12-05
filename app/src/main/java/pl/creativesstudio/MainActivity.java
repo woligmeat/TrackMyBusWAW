@@ -7,6 +7,8 @@ import android.location.Location;
 import android.os.Bundle;
 import android.os.Handler;
 import android.widget.Toast;
+import android.graphics.drawable.Drawable;
+import android.util.Log;
 
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
@@ -55,13 +57,17 @@ public class MainActivity extends AppCompatActivity
     private Runnable runnable;
     private Runnable mapUpdateRunnable;
     private static final long MAP_UPDATE_DELAY = 1000; // 1 sekunda opóźnienia
-    private static final long DATA_REFRESH_INTERVAL = 10000; // 10 sekund na odświeżenie
+    private static final long DATA_REFRESH_INTERVAL_HIGH_ZOOM = 5000; // 5 sekund
+    private static final long DATA_REFRESH_INTERVAL_LOW_ZOOM = 15000; // 15 sekund
+    private static final long DATA_REFRESH_INTERVAL_DEFAULT = 10000; // 10 sekund
+    private static final long MIN_API_CALL_INTERVAL = 5000; // Minimalny odstęp między zapytaniami (5 sekund)
+
+    private static final float MIN_ZOOM_LEVEL = 14.0f; // Minimalny poziom powiększenia
 
     private Map<String, Marker> activeMarkers = new HashMap<>();
     private String selectedBusId = null;
     private List<Bus> lastLoadedBuses = new ArrayList<>();
     private long lastApiCallTime = 0;
-    private static final long MIN_API_CALL_INTERVAL = 5000; // Minimalny odstęp między zapytaniami (5 sekund)
     private boolean isInitialLoad = true;
 
     private ExecutorService executorService;
@@ -71,12 +77,14 @@ public class MainActivity extends AppCompatActivity
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
+         // Inicjalizacja mapy
         SupportMapFragment mapFragment = (SupportMapFragment) getSupportFragmentManager()
                 .findFragmentById(R.id.id_map);
         if (mapFragment != null) {
             mapFragment.getMapAsync(this);
         }
 
+        // Inicjalizacja Retrofit
         Retrofit retrofit = new Retrofit.Builder()
                 .baseUrl(BASE_URL)
                 .addConverterFactory(GsonConverterFactory.create())
@@ -140,11 +148,16 @@ public class MainActivity extends AppCompatActivity
         runnable = new Runnable() {
             @Override
             public void run() {
-                loadBusData(true);
-                handler.postDelayed(this, DATA_REFRESH_INTERVAL);
+                float currentZoom = mMap.getCameraPosition().zoom;
+                if (currentZoom >= MIN_ZOOM_LEVEL) {
+                    loadBusData(true);
+                    handler.postDelayed(this, DATA_REFRESH_INTERVAL_HIGH_ZOOM);
+                } else {
+                    handler.postDelayed(this, DATA_REFRESH_INTERVAL_LOW_ZOOM);
+                }
             }
         };
-        handler.postDelayed(runnable, DATA_REFRESH_INTERVAL);
+        handler.postDelayed(runnable, DATA_REFRESH_INTERVAL_HIGH_ZOOM);
     }
 
     private void updateVisibleBounds() {
@@ -155,6 +168,8 @@ public class MainActivity extends AppCompatActivity
 
     @Override
     public void onCameraIdle() {
+        if (mMap == null) return;
+
         currentMapCenter = mMap.getCameraPosition().target;
         updateVisibleBounds();
 
@@ -171,7 +186,22 @@ public class MainActivity extends AppCompatActivity
         handler.postDelayed(mapUpdateRunnable, MAP_UPDATE_DELAY);
     }
 
-        private void updateMapWithCurrentData() {
+    private void updateMapWithCurrentData() {
+        if (mMap == null) return;
+
+        float currentZoom = mMap.getCameraPosition().zoom;
+        Log.d("ZoomLevel", "Aktualny poziom zoomu: " + currentZoom);
+
+        if (currentZoom < MIN_ZOOM_LEVEL) {
+            Log.d("ZoomLevel", "Zoom poniżej progu. Usuwanie markerów.");
+            // Usuń markery
+            for (Marker marker : activeMarkers.values()) {
+                marker.remove();
+            }
+            activeMarkers.clear();
+            return;
+        }
+
         if (!lastLoadedBuses.isEmpty()) {
             List<Bus> visibleBuses = filterBusesWithinBounds(lastLoadedBuses);
             displayBusesOnMap(visibleBuses);
@@ -203,8 +233,28 @@ public class MainActivity extends AppCompatActivity
             return;
         }
 
+        if (visibleBounds == null) {
+            return; // Nie ma dostępnych granic, więc nie ładuj danych
+        }
+
+        double minLat = visibleBounds.southwest.latitude;
+        double maxLat = visibleBounds.northeast.latitude;
+        double minLon = visibleBounds.southwest.longitude;
+        double maxLon = visibleBounds.northeast.longitude;
+
         executorService.execute(() -> {
             try {
+                // Jeśli API wspiera pobieranie na podstawie granic, użyj poniższego wywołania
+                // Call<ApiResponse> call = apiService.getBusesWithinBounds(
+                //         RESOURCE_ID,
+                //         API_KEY,
+                //         minLat,
+                //         maxLat,
+                //         minLon,
+                //         maxLon
+                // );
+
+                // Jeśli API nie wspiera, użyj istniejącego wywołania
                 Call<ApiResponse> call = apiService.getBuses(
                         RESOURCE_ID,
                         API_KEY,
@@ -212,6 +262,7 @@ public class MainActivity extends AppCompatActivity
                         null,
                         null
                 );
+
                 Response<ApiResponse> response = call.execute();
 
                 if (response.isSuccessful() && response.body() != null) {
@@ -271,9 +322,13 @@ public class MainActivity extends AppCompatActivity
         return sdf.format(date);
     }
 
-        private void displayBusesOnMap(List<Bus> buses) {
+    private void displayBusesOnMap(List<Bus> buses) {
+        if (mMap == null) return;
+
+        // Najpierw wyczyść istniejące markery
         mMap.clear();
 
+        // Dodaj marker początkowy
         LatLng initialLocation = new LatLng(52.2881717, 21.0061544);
         mMap.addMarker(new MarkerOptions().position(initialLocation).title("WSB Merito"));
 
@@ -286,10 +341,13 @@ public class MainActivity extends AppCompatActivity
 
             if (lat != 0 && lon != 0) {
                 LatLng position = new LatLng(lat, lon);
+                BitmapDescriptor icon = createCustomMarker(line);
                 MarkerOptions markerOptions = new MarkerOptions()
                         .position(position)
                         .title("Linia: " + line + " | Nr pojazdu: " + busId)
-                        .snippet(busId);
+                        .snippet(busId)
+                        .icon(icon)
+                        .anchor(0.5f, 1f); // Ustawienie kotwicy, aby marker był poprawnie wyświetlany
 
                 Marker marker = mMap.addMarker(markerOptions);
                 if (marker != null) {
@@ -300,6 +358,47 @@ public class MainActivity extends AppCompatActivity
                 }
             }
         }
+    }
+
+    private BitmapDescriptor createCustomMarker(String line) {
+        Paint textPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        textPaint.setTextSize(50);
+        textPaint.setColor(Color.BLACK);
+        textPaint.setTextAlign(Paint.Align.CENTER);
+
+        Paint backgroundPaint = new Paint();
+        backgroundPaint.setColor(Color.WHITE);
+
+        Rect textBounds = new Rect();
+        textPaint.getTextBounds(line, 0, line.length(), textBounds);
+
+        int textWidth = textBounds.width() + 20;
+        int textHeight = textBounds.height() + 20;
+
+        // Rozmiar pinezki
+        int pinWidth = 124;
+        int pinHeight = 212;
+
+        int width = Math.max(textWidth, pinWidth);
+        int height = textHeight + pinHeight;
+
+        Bitmap bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
+        Canvas canvas = new Canvas(bitmap);
+
+        // Rysuj tło dla tekstu
+        canvas.drawRect(0, 0, width, textHeight, backgroundPaint);
+
+        // Rysuj tekst w centrum
+        canvas.drawText(line, width / 2, textHeight - 10, textPaint);
+
+        // Rysuj ikonę pinezki poniżej tekstu
+        Drawable drawable = ContextCompat.getDrawable(this, R.drawable.ic_marker_icon);
+        if (drawable != null) {
+            drawable.setBounds((width - pinWidth) / 2, textHeight, (width + pinWidth) / 2, height);
+            drawable.draw(canvas);
+        }
+
+        return BitmapDescriptorFactory.fromBitmap(bitmap);
     }
 
     @Override
