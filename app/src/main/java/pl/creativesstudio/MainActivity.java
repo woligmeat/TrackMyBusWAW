@@ -6,6 +6,8 @@ import android.graphics.*;
 import android.location.Location;
 import android.os.Bundle;
 import android.os.Handler;
+import android.view.View;
+import android.widget.ImageButton;
 import android.widget.Toast;
 import android.graphics.drawable.Drawable;
 import android.util.Log;
@@ -14,11 +16,14 @@ import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
+import androidx.recyclerview.widget.LinearLayoutManager;
+import androidx.recyclerview.widget.RecyclerView;
 
 import com.google.android.gms.location.FusedLocationProviderClient;
 import com.google.android.gms.location.LocationServices;
 import com.google.android.gms.maps.*;
 import com.google.android.gms.maps.model.*;
+import com.google.android.material.bottomsheet.BottomSheetDialog;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -43,7 +48,7 @@ public class MainActivity extends AppCompatActivity
         GoogleMap.OnCameraIdleListener,
         ActivityCompat.OnRequestPermissionsResultCallback {
 
-    
+
     private GoogleMap mMap;
     private static final int LOCATION_PERMISSION_REQUEST_CODE = 1;
     private LatLng currentMapCenter;
@@ -78,7 +83,12 @@ public class MainActivity extends AppCompatActivity
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
-         // Inicjalizacja mapy
+        // Obsługa przycisku menu
+        ImageButton buttonMenu = findViewById(R.id.button_menu);
+        buttonMenu.setOnClickListener(v -> showBottomSheetWithLines());
+
+
+        // Inicjalizacja mapy
         SupportMapFragment mapFragment = (SupportMapFragment) getSupportFragmentManager()
                 .findFragmentById(R.id.id_map);
         if (mapFragment != null) {
@@ -94,6 +104,110 @@ public class MainActivity extends AppCompatActivity
         apiService = retrofit.create(WarsawApiService.class);
 
         executorService = Executors.newSingleThreadExecutor();
+    }
+
+    private void showBottomSheetWithLines() {
+        // Utwórz BottomSheetDialog
+        BottomSheetDialog bottomSheetDialog = new BottomSheetDialog(this);
+        View bottomSheetView = getLayoutInflater().inflate(R.layout.bottom_sheet_lines, null);
+        bottomSheetDialog.setContentView(bottomSheetView);
+
+        // Pobierz RecyclerView z układu
+        RecyclerView recyclerView = bottomSheetView.findViewById(R.id.recycler_view_lines);
+        recyclerView.setLayoutManager(new LinearLayoutManager(this));
+
+        // Przygotuj dane (linie autobusowe)
+        List<String> busLines = new ArrayList<>();
+        for (Bus bus : lastLoadedBuses) {
+            if (!busLines.contains(bus.getLines())) {
+                busLines.add(bus.getLines());
+            }
+        }
+
+        // Posortuj linie
+        busLines = sortBusLines(busLines);
+
+        // Adapter do wyświetlania linii
+        BusLinesAdapter adapter = new BusLinesAdapter(busLines, line -> {
+            Toast.makeText(MainActivity.this, "Wybrano linię: " + line, Toast.LENGTH_SHORT).show();
+            bottomSheetDialog.dismiss();
+            filterAndZoomToLine(line); // Wywołanie metody dopasowującej mapę do wybranej linii
+        });
+
+        recyclerView.setAdapter(adapter);
+
+        // Pokaż dialog
+        bottomSheetDialog.show();
+    }
+
+    private List<String> sortBusLines(List<String> lines) {
+        // Niestandardowy komparator dla linii autobusowych
+        lines.sort((line1, line2) -> {
+            // Rozdziel numery i litery w liniach
+            String numberPart1 = line1.replaceAll("[^0-9]", ""); // Wyodrębnij część numeryczną
+            String numberPart2 = line2.replaceAll("[^0-9]", "");
+
+            String letterPart1 = line1.replaceAll("[0-9]", ""); // Wyodrębnij część literową
+            String letterPart2 = line2.replaceAll("[0-9]", "");
+
+            // Najpierw porównaj część literową (alfabetycznie)
+            int letterComparison = letterPart1.compareTo(letterPart2);
+            if (letterComparison != 0) {
+                return letterComparison;
+            }
+
+            // Jeśli litery są takie same, porównaj numery (liczbowo)
+            if (!numberPart1.isEmpty() && !numberPart2.isEmpty()) {
+                return Integer.compare(Integer.parseInt(numberPart1), Integer.parseInt(numberPart2));
+            }
+
+            // W przypadku braku numerów porównaj pełne linie (zapewnia stabilność)
+            return line1.compareTo(line2);
+        });
+
+        return lines;
+    }
+
+    private void filterAndZoomToLine(String line) {
+        if (mMap == null || lastLoadedBuses.isEmpty()) return;
+
+        // Lista autobusów dla wybranej linii
+        List<Bus> filteredBuses = new ArrayList<>();
+        for (Bus bus : lastLoadedBuses) {
+            if (bus.getLines().equals(line)) {
+                filteredBuses.add(bus);
+            }
+        }
+
+        if (filteredBuses.isEmpty()) {
+            Toast.makeText(this, "Brak autobusów dla linii: " + line, Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        // Usuń obecne markery i dodaj tylko dla wybranej linii
+        mMap.clear();
+        activeMarkers.clear();
+
+        LatLngBounds.Builder boundsBuilder = new LatLngBounds.Builder();
+        for (Bus bus : filteredBuses) {
+            LatLng position = new LatLng(bus.getLat(), bus.getLon());
+            BitmapDescriptor icon = createCustomMarker(line);
+            MarkerOptions markerOptions = new MarkerOptions()
+                    .position(position)
+                    .title("Linia: " + line + " | Nr pojazdu: " + bus.getVehicleNumber())
+                    .icon(icon)
+                    .anchor(0.5f, 1f);
+
+            Marker marker = mMap.addMarker(markerOptions);
+            if (marker != null) {
+                activeMarkers.put(bus.getVehicleNumber(), marker);
+                boundsBuilder.include(position);
+            }
+        }
+
+        // Dostosuj kamerę, aby objąć wszystkie autobusy danej linii
+        LatLngBounds bounds = boundsBuilder.build();
+        mMap.animateCamera(CameraUpdateFactory.newLatLngBounds(bounds, 100));
     }
 
     @Override
@@ -273,8 +387,8 @@ public class MainActivity extends AppCompatActivity
                         // Brak danych: Wyświetl ostatnio pobrane dane
                         runOnUiThread(() -> {
                             if (!lastLoadedBuses.isEmpty()) {
-                                Toast.makeText(MainActivity.this, "Brak nowych danych. Wyświetlam ostatnio pobrane dane z czasu: " 
-                                    + formatTimestamp(lastApiCallTime), Toast.LENGTH_LONG).show();
+                                Toast.makeText(MainActivity.this, "Brak nowych danych. Wyświetlam ostatnio pobrane dane z czasu: "
+                                        + formatTimestamp(lastApiCallTime), Toast.LENGTH_LONG).show();
                                 displayBusesOnMap(lastLoadedBuses);
                             } else {
                                 Toast.makeText(MainActivity.this, "Brak danych do wyświetlenia.", Toast.LENGTH_LONG).show();
@@ -294,8 +408,8 @@ public class MainActivity extends AppCompatActivity
                     // Błąd w odpowiedzi API: Wyświetl ostatnio pobrane dane
                     runOnUiThread(() -> {
                         if (!lastLoadedBuses.isEmpty()) {
-                            Toast.makeText(MainActivity.this, "Błąd API. Wyświetlam ostatnio pobrane dane z czasu: " 
-                                + formatTimestamp(lastApiCallTime), Toast.LENGTH_LONG).show();
+                            Toast.makeText(MainActivity.this, "Błąd API. Wyświetlam ostatnio pobrane dane z czasu: "
+                                    + formatTimestamp(lastApiCallTime), Toast.LENGTH_LONG).show();
                             displayBusesOnMap(lastLoadedBuses);
                         } else {
                             Toast.makeText(MainActivity.this, "Błąd API i brak danych do wyświetlenia.", Toast.LENGTH_LONG).show();
@@ -306,8 +420,8 @@ public class MainActivity extends AppCompatActivity
                 // Błąd sieci: Wyświetl ostatnio pobrane dane
                 runOnUiThread(() -> {
                     if (!lastLoadedBuses.isEmpty()) {
-                        Toast.makeText(MainActivity.this, "Błąd połączenia. Wyświetlam ostatnio pobrane dane z czasu: " 
-                            + formatTimestamp(lastApiCallTime), Toast.LENGTH_LONG).show();
+                        Toast.makeText(MainActivity.this, "Błąd połączenia. Wyświetlam ostatnio pobrane dane z czasu: "
+                                + formatTimestamp(lastApiCallTime), Toast.LENGTH_LONG).show();
                         displayBusesOnMap(lastLoadedBuses);
                     } else {
                         Toast.makeText(MainActivity.this, "Błąd połączenia i brak danych do wyświetlenia.", Toast.LENGTH_LONG).show();

@@ -2,4 +2,8 @@
 <resources>
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
+    <color name="gray">#ADB5BD</color>
+    <color name="primary">#6200EE</color> <!-- Główny kolor aplikacji -->
+    <color name="primary_variant">#3700B3</color> <!-- Wariant głównego koloru -->
+    <color name="secondary">#03DAC6</color> <!-- Kolor akcentu -->
 </resources>
