@@ -75,8 +75,9 @@ public class MainActivity extends AppCompatActivity
     private List<Bus> lastLoadedBuses = new ArrayList<>();
     private long lastApiCallTime = 0;
     private boolean isInitialLoad = true;
-
     private ExecutorService executorService;
+    private boolean lineSelected = false;
+    private List<Bus> allBuses = new ArrayList<>();
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -107,36 +108,60 @@ public class MainActivity extends AppCompatActivity
     }
 
     private void showBottomSheetWithLines() {
-        // Utwórz BottomSheetDialog
         BottomSheetDialog bottomSheetDialog = new BottomSheetDialog(this);
         View bottomSheetView = getLayoutInflater().inflate(R.layout.bottom_sheet_lines, null);
         bottomSheetDialog.setContentView(bottomSheetView);
 
-        // Pobierz RecyclerView z układu
         RecyclerView recyclerView = bottomSheetView.findViewById(R.id.recycler_view_lines);
         recyclerView.setLayoutManager(new LinearLayoutManager(this));
 
-        // Przygotuj dane (linie autobusowe)
+        // Przygotuj dane (linie autobusowe) korzystając z allBuses
         List<String> busLines = new ArrayList<>();
-        for (Bus bus : lastLoadedBuses) {
+        // Dodaj najpierw "POKAŻ WSZYSTKIE AUTOBUSY"
+        busLines.add("POKAŻ WSZYSTKIE AUTOBUSY");
+
+        // Zbierz wszystkie unikalne linie z allBuses
+        for (Bus bus : allBuses) {
             if (!busLines.contains(bus.getLines())) {
                 busLines.add(bus.getLines());
             }
         }
 
-        // Posortuj linie
-        busLines = sortBusLines(busLines);
+        // Posortuj linie (poza pierwszym elementem, który jest specjalny)
+        // Możesz posortować podlistę od 1 indeksu:
+        List<String> linesToSort = busLines.subList(1, busLines.size());
+        linesToSort = sortBusLines(linesToSort);
+        // Nadpisz posortowaną część
+        for (int i = 1; i < busLines.size(); i++) {
+            busLines.set(i, linesToSort.get(i - 1));
+        }
 
-        // Adapter do wyświetlania linii
         BusLinesAdapter adapter = new BusLinesAdapter(busLines, line -> {
-            Toast.makeText(MainActivity.this, "Wybrano linię: " + line, Toast.LENGTH_SHORT).show();
             bottomSheetDialog.dismiss();
-            filterAndZoomToLine(line); // Wywołanie metody dopasowującej mapę do wybranej linii
+            if (line.equals("POKAŻ WSZYSTKIE AUTOBUSY")) {
+                // Użytkownik chce wrócić do wyświetlania wszystkich autobusów
+                lineSelected = false;
+                // Przywróć pełną listę autobusów
+                lastLoadedBuses = new ArrayList<>(allBuses);
+
+                Toast.makeText(MainActivity.this, "Wybrano: POKAŻ WSZYSTKIE AUTOBUSY", Toast.LENGTH_SHORT).show();
+
+                // Wycentruj mapę na obecną lokalizację użytkownika, jeśli jest dostępna
+                // Lub na obecną lokalizację mapy jeśli brak informacji o użytkowniku
+                if (currentMapCenter != null) {
+                    mMap.animateCamera(CameraUpdateFactory.newLatLngZoom(currentMapCenter, 15f));
+                }
+
+                // Wyświetl wszystkie autobusy
+                displayBusesOnMap(lastLoadedBuses);
+            } else {
+                Toast.makeText(MainActivity.this, "Wybrano linię: " + line, Toast.LENGTH_SHORT).show();
+                lineSelected = true;
+                filterAndZoomToLine(line);
+            }
         });
 
         recyclerView.setAdapter(adapter);
-
-        // Pokaż dialog
         bottomSheetDialog.show();
     }
 
@@ -169,11 +194,10 @@ public class MainActivity extends AppCompatActivity
     }
 
     private void filterAndZoomToLine(String line) {
-        if (mMap == null || lastLoadedBuses.isEmpty()) return;
+        if (mMap == null || allBuses.isEmpty()) return;
 
-        // Lista autobusów dla wybranej linii
         List<Bus> filteredBuses = new ArrayList<>();
-        for (Bus bus : lastLoadedBuses) {
+        for (Bus bus : allBuses) {
             if (bus.getLines().equals(line)) {
                 filteredBuses.add(bus);
             }
@@ -184,28 +208,14 @@ public class MainActivity extends AppCompatActivity
             return;
         }
 
-        // Usuń obecne markery i dodaj tylko dla wybranej linii
-        mMap.clear();
-        activeMarkers.clear();
+        // Nie nadpisuj lastLoadedBuses, to pozwoli nam wrócić do pełnej listy w przyszłości
+        // Po prostu wyświetl przefiltrowane autobusy
+        displayBusesOnMap(filteredBuses);
 
         LatLngBounds.Builder boundsBuilder = new LatLngBounds.Builder();
         for (Bus bus : filteredBuses) {
-            LatLng position = new LatLng(bus.getLat(), bus.getLon());
-            BitmapDescriptor icon = createCustomMarker(line);
-            MarkerOptions markerOptions = new MarkerOptions()
-                    .position(position)
-                    .title("Linia: " + line + " | Nr pojazdu: " + bus.getVehicleNumber())
-                    .icon(icon)
-                    .anchor(0.5f, 1f);
-
-            Marker marker = mMap.addMarker(markerOptions);
-            if (marker != null) {
-                activeMarkers.put(bus.getVehicleNumber(), marker);
-                boundsBuilder.include(position);
-            }
+            boundsBuilder.include(new LatLng(bus.getLat(), bus.getLon()));
         }
-
-        // Dostosuj kamerę, aby objąć wszystkie autobusy danej linii
         LatLngBounds bounds = boundsBuilder.build();
         mMap.animateCamera(CameraUpdateFactory.newLatLngBounds(bounds, 100));
     }
@@ -303,6 +313,7 @@ public class MainActivity extends AppCompatActivity
 
     private void updateMapWithCurrentData() {
         if (mMap == null) return;
+        if (lineSelected) return;
 
         float currentZoom = mMap.getCameraPosition().zoom;
         Log.d("ZoomLevel", "Aktualny poziom zoomu: " + currentZoom);
@@ -321,6 +332,7 @@ public class MainActivity extends AppCompatActivity
             List<Bus> visibleBuses = filterBusesWithinBounds(lastLoadedBuses);
             displayBusesOnMap(visibleBuses);
         }
+
 
         long currentTime = System.currentTimeMillis();
         if (currentTime - lastApiCallTime >= MIN_API_CALL_INTERVAL || isInitialLoad) {
@@ -383,6 +395,9 @@ public class MainActivity extends AppCompatActivity
                 if (response.isSuccessful() && response.body() != null) {
                     List<Bus> result = response.body().getResult();
 
+                    allBuses = result;
+                    lastLoadedBuses = new ArrayList<>(result);
+
                     if (result == null || result.isEmpty()) {
                         // Brak danych: Wyświetl ostatnio pobrane dane
                         runOnUiThread(() -> {
@@ -444,8 +459,8 @@ public class MainActivity extends AppCompatActivity
         mMap.clear();
 
         // Dodaj marker początkowy
-        LatLng initialLocation = new LatLng(52.2881717, 21.0061544);
-        mMap.addMarker(new MarkerOptions().position(initialLocation).title("WSB Merito"));
+//        LatLng initialLocation = new LatLng(52.2881717, 21.0061544);
+//        mMap.addMarker(new MarkerOptions().position(initialLocation).title("WSB Merito"));
 
         activeMarkers.clear();
         for (Bus bus : buses) {
