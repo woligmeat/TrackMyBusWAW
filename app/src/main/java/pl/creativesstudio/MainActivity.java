@@ -43,6 +43,7 @@ public class MainActivity extends AppCompatActivity
         GoogleMap.OnCameraIdleListener,
         ActivityCompat.OnRequestPermissionsResultCallback {
 
+    
     private GoogleMap mMap;
     private static final int LOCATION_PERMISSION_REQUEST_CODE = 1;
     private LatLng currentMapCenter;
