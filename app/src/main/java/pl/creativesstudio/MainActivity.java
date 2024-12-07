@@ -88,6 +88,28 @@ public class MainActivity extends AppCompatActivity
         ImageButton buttonMenu = findViewById(R.id.button_menu);
         buttonMenu.setOnClickListener(v -> showBottomSheetWithLines());
 
+        ImageButton buttonCurrentLocation = findViewById(R.id.button_current_location);
+        buttonCurrentLocation.setOnClickListener(v -> {
+            if (ContextCompat.checkSelfPermission(MainActivity.this, Manifest.permission.ACCESS_FINE_LOCATION)
+                    == PackageManager.PERMISSION_GRANTED) {
+
+                FusedLocationProviderClient fusedLocationClient = LocationServices.getFusedLocationProviderClient(MainActivity.this);
+                fusedLocationClient.getLastLocation().addOnSuccessListener(MainActivity.this, location -> {
+                    if (location != null) {
+                        LatLng userLocation = new LatLng(location.getLatitude(), location.getLongitude());
+                        if (mMap != null) {
+                            mMap.animateCamera(CameraUpdateFactory.newLatLngZoom(userLocation, 15));
+                        }
+                    } else {
+                        Toast.makeText(MainActivity.this, "Nie udało się pobrać lokalizacji użytkownika", Toast.LENGTH_SHORT).show();
+                    }
+                });
+            } else {
+                // Brak uprawnień do lokalizacji
+                Toast.makeText(MainActivity.this, "Brak uprawnień do pobrania lokalizacji", Toast.LENGTH_SHORT).show();
+            }
+        });
+
 
         // Inicjalizacja mapy
         SupportMapFragment mapFragment = (SupportMapFragment) getSupportFragmentManager()
