@@ -49,10 +49,10 @@ public class MainActivity extends AppCompatActivity
         ActivityCompat.OnRequestPermissionsResultCallback {
 
 
-    private GoogleMap mMap;
+    GoogleMap mMap;
     private static final int LOCATION_PERMISSION_REQUEST_CODE = 1;
     private LatLng currentMapCenter;
-    private LatLngBounds visibleBounds;
+    LatLngBounds visibleBounds;
 
     private WarsawApiService apiService;
     private static final String BASE_URL = "https://api.um.warszawa.pl/";
@@ -77,7 +77,7 @@ public class MainActivity extends AppCompatActivity
     private boolean isInitialLoad = true;
     private ExecutorService executorService;
     private boolean lineSelected = false;
-    private List<Bus> allBuses = new ArrayList<>();
+    List<Bus> allBuses = new ArrayList<>();
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -129,7 +129,7 @@ public class MainActivity extends AppCompatActivity
         executorService = Executors.newSingleThreadExecutor();
     }
 
-    private void showBottomSheetWithLines() {
+    void showBottomSheetWithLines() {
         BottomSheetDialog bottomSheetDialog = new BottomSheetDialog(this);
         View bottomSheetView = getLayoutInflater().inflate(R.layout.bottom_sheet_lines, null);
         bottomSheetDialog.setContentView(bottomSheetView);
@@ -187,7 +187,7 @@ public class MainActivity extends AppCompatActivity
         bottomSheetDialog.show();
     }
 
-    private List<String> sortBusLines(List<String> lines) {
+    List<String> sortBusLines(List<String> lines) {
         // Niestandardowy komparator dla linii autobusowych
         lines.sort((line1, line2) -> {
             // Rozdziel numery i litery w liniach
@@ -215,7 +215,7 @@ public class MainActivity extends AppCompatActivity
         return lines;
     }
 
-    private void filterAndZoomToLine(String line) {
+    void filterAndZoomToLine(String line) {
         if (mMap == null || allBuses.isEmpty()) return;
 
         List<Bus> filteredBuses = new ArrayList<>();
@@ -363,7 +363,7 @@ public class MainActivity extends AppCompatActivity
         }
     }
 
-    private List<Bus> filterBusesWithinBounds(List<Bus> allBuses) {
+    List<Bus> filterBusesWithinBounds(List<Bus> allBuses) {
         List<Bus> visibleBuses = new ArrayList<>();
         if (visibleBounds != null) {
             for (Bus bus : allBuses) {
