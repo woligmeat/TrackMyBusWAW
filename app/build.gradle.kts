@@ -43,6 +43,7 @@ dependencies {
     implementation(libs.navigation.ui)
     testImplementation(libs.junit)
     testImplementation(libs.core)
+    testImplementation(libs.core)
     androidTestImplementation(libs.ext.junit)
     androidTestImplementation(libs.espresso.core)
     implementation("com.google.android.gms:play-services-maps:19.0.0")
