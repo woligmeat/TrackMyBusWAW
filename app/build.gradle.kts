@@ -32,6 +32,22 @@ android {
     buildFeatures {
         viewBinding = true
     }
+
+    packaging {
+        resources {
+            excludes.addAll(
+                listOf(
+                    "META-INF/LICENSE.md",
+                    "META-INF/LICENSE",
+                    "META-INF/LICENSE.txt",
+                    "META-INF/NOTICE",
+                    "META-INF/NOTICE.txt",
+                    "META-INF/LICENSE-notice.md"
+                )
+            )
+        }
+    }
+
 }
 
 dependencies {
@@ -41,6 +57,7 @@ dependencies {
     implementation(libs.constraintlayout)
     implementation(libs.navigation.fragment)
     implementation(libs.navigation.ui)
+    implementation(libs.junit.jupiter)
     testImplementation(libs.junit)
     testImplementation(libs.core)
     testImplementation(libs.core)
