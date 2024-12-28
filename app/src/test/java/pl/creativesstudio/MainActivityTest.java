@@ -29,19 +29,39 @@ import pl.creativesstudio.models.Bus;
 import static org.junit.Assert.*;
 import static org.mockito.Mockito.*;
 
+
+/**
+ * Unit tests for the `MainActivity` class.
+ * Verifies various methods and functionality, including:
+ * - Sorting bus lines.
+ * - Filtering buses within geographical bounds.
+ * - Filtering buses by line.
+ * - Formatting timestamps.
+ */
 @RunWith(RobolectricTestRunner.class)
 @Config(sdk = Build.VERSION_CODES.O_MR1)
 public class MainActivityTest {
+
+    /**
+     * Instance of the `MainActivity` class used for testing.
+     */
     private MainActivity mainActivity;
+
+    /**
+     * List of test buses used for testing.
+     */
     private List<Bus> testBuses;
 
+    /**
+     * Sets up the test environment before each test.
+     * - Initializes a new instance of `MainActivity`.
+     * - Creates a mock list of `Bus` objects with predefined values.
+     */
     @Before
     public void setUp() {
         mainActivity = new MainActivity();
 
-        Drawable mockDrawable = new ColorDrawable(Color.RED);
-
-        // Create test bus data using setters
+        // Create mock data for buses
         testBuses = new ArrayList<>();
 
         Bus bus1 = new Bus();
@@ -72,6 +92,10 @@ public class MainActivityTest {
         testBuses.add(bus3);
     }
 
+    /**
+     * Tests the `sortBusLines` method for correct sorting of bus lines.
+     * Verifies that lines are sorted numerically and alphabetically as expected.
+     */
     @Test
     public void testSortBusLines() {
         List<String> unsortedLines = new ArrayList<>();
@@ -89,6 +113,10 @@ public class MainActivityTest {
         assertEquals("N61", sortedLines.get(3));
     }
 
+    /**
+     * Tests the `filterBusesWithinBounds` method.
+     * Verifies that only buses within the specified geographical bounds are returned.
+     */
     @Test
     public void testFilterBusesWithinBounds() {
         LatLngBounds mockBounds = LatLngBounds.builder()
@@ -100,14 +128,17 @@ public class MainActivityTest {
 
         List<Bus> filteredBuses = mainActivity.filterBusesWithinBounds(testBuses);
 
-        // Verify that filtering works (the exact behavior depends on your implementation)
+        // Verify that filtering works
         assertNotNull(filteredBuses);
         assertEquals(3, filteredBuses.size());
     }
 
+    /**
+     * Tests filtering buses by line manually.
+     * Verifies that only buses with the specified line are returned.
+     */
     @Test
     public void testFilterByLine() {
-        // Test filtering buses by line
         List<Bus> filteredBuses = new ArrayList<>();
         for (Bus bus : testBuses) {
             if ("123".equals(bus.getLines())) {
@@ -122,37 +153,24 @@ public class MainActivityTest {
         }
     }
 
+    /**
+     * Tests the `formatTimestamp` method.
+     * Verifies that the method formats a timestamp into the expected format: `yyyy-MM-dd HH:mm:ss`.
+     */
     @Test
     public void testFormatTimestamp() {
-        // Use reflection to call the private method
         try {
-            java.lang.reflect.Method method = MainActivity.class.getDeclaredMethod("formatTimestamp", long.class);
+            Method method = MainActivity.class.getDeclaredMethod("formatTimestamp", long.class);
             method.setAccessible(true);
 
             long testTimestamp = System.currentTimeMillis();
             String formattedTime = (String) method.invoke(mainActivity, testTimestamp);
 
             assertNotNull(formattedTime);
-            // Check if the format matches expected pattern (YYYY-MM-DD HH:MM:SS)
+            // Check if the format matches expected pattern
             assertTrue(formattedTime.matches("\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}"));
         } catch (Exception e) {
             fail("Exception in testFormatTimestamp: " + e.getMessage());
         }
     }
-
-//    @Test
-//    public void testOnMapReady() {
-//        GoogleMap mockMap = mock(GoogleMap.class);
-//
-//        mainActivity.onMapReady(mockMap);
-//
-//        assertNotNull("Google Map should be initialized", mainActivity.mMap);
-//
-//        // Verifying that location services are enabled
-//        verify(mockMap).setMyLocationEnabled(true);
-//
-//        // Check if the camera is moved to the default location
-//        LatLng defaultLocation = new LatLng(52.2881717, 21.0061544);
-//        verify(mockMap).moveCamera(CameraUpdateFactory.newLatLngZoom(defaultLocation, 15));
-//    }
 }
